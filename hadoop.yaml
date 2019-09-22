@@ -1,0 +1,801 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys a Hadoop cluster of 4 nodes and Amabari server
+Parameters:
+  AmbariKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Ambari Server Machine
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  HadoopKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Hadoop Machines in the cluster
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  DomainName:
+    Type: String
+    Description: Your own domain name already configured in AWS Route53
+
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: You can find this info in your AWS Route53 screen
+
+  NameNode:
+    Type: Number
+    Default: 100
+    Description: Size (in GB) of external drive for HDFS Namenode
+
+  DataNode:
+    Type: Number
+    Default: 1000
+    Description: Size (in GB) of root drive for HDFS Datanode
+
+  HadoopNode:
+    Type: Number
+    Default: 1000
+    Description: Size (in GB) of root drive for each machin in the Hadoop Cluster
+
+  AmbariVPC:
+    Type: String
+    Description: CIDR block for Ambari VPC
+    Default: 24.1.0.0/16
+    AllowedPattern: "[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/[0-9]{1,2}"
+
+  HadoopVPC:
+    Type: String
+    Description: CIDR block for Hadoop VPC
+    Default: 26.1.0.0/16
+    AllowedPattern: "[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/[0-9]{1,2}"
+
+  AmbariSubnet1:
+    Type: String
+    Description: CIDR block for Ambari Subnet
+    Default: 24.1.1.0/24
+    AllowedPattern: "[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/[0-9]{1,2}"
+
+  HadoopSubnet1:
+    Type: String
+    Default: 26.1.1.0/24
+    AllowedPattern: "[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/[0-9]{1,2}"
+
+  HadoopPublicSubnet2:
+    Type: String
+    Default: 26.1.2.0/24
+    AllowedPattern: "[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}/[0-9]{1,2}"
+
+  NamenodePath:
+    Type: String
+    Description: Path where Namenode external drive will be mounted
+
+  DatanodePath:
+    Type: String
+    Description: Path where Datanode external drive will be mounted
+
+  AmbariAgentAMI:
+    Type: AWS::EC2::Image::Id
+    Description: Ambari Agent AMI created in the previous step of the tutorial
+
+  AmbariServerAMI:
+    Type: AWS::EC2::Image::Id
+    Description: Ambari Server AMI created in the previous step of the tutorial
+
+  AmbariEC2Instance:
+    Type: String
+    Default: t2.small
+    Description: EC2 Instance type of the machine where ambari will be run
+
+  HadoopEC2Instance:
+    Type: String
+    Default: m4.xlarge
+    Description: EC2 Instance type of the machines where hadoop will be run
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Ambari Info
+        Parameters:
+          - AmbariKeyName
+          - AmbariEC2Instance
+          - AmbariAgentAMI
+          - AmbariServerAMI
+
+      - Label:
+          default: Hadoop Cluster Info
+        Parameters:
+          - HadoopKeyName
+          - HadoopNode
+          - HadoopEC2Instance
+          - NameNode
+          - NamenodePath
+          - DataNode
+          - DatanodePath
+
+      - Label:
+          default: Network Info
+        Parameters:
+          - DomainName
+          - HostedZoneId
+          - AmbariVPC
+          - AmbariSubnet1
+          - HadoopVPC
+          - HadoopSubnet1
+          - HadoopPublicSubnet2
+
+Resources:
+  InternetVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref AmbariVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Ambari-VPC"
+        - Key: Job
+          Value: Hadoop
+
+  InternetSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref InternetVPC
+      CidrBlock: !Ref AmbariSubnet1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Ambari-Region1"
+        - Key: Job
+          Value: Hadoop
+
+  ClusterVPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref HadoopVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-VPC"
+        - Key: Job
+          Value: Hadoop
+
+  ClusterSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ClusterVPC
+      CidrBlock: !Ref HadoopSubnet1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Private1"
+        - Key: Job
+          Value: Hadoop
+
+  ClusterPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ClusterVPC
+      CidrBlock: !Ref HadoopPublicSubnet2
+      AvailabilityZone: !Select
+        - 1
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Public1"
+        - Key: Job
+          Value: Hadoop
+
+  #GATEWAYS
+  AmbariIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Ambari-IGW"
+        - Key: Job
+          Value: Hadoop
+
+  AttachAmbariIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref InternetVPC
+      InternetGatewayId: !Ref AmbariIGW
+
+  HadoopIGWNAT:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-IGW-NAT"
+        - Key: Job
+          Value: Hadoop
+
+  AttachHadoopIGWNAT:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ClusterVPC
+      InternetGatewayId: !Ref HadoopIGWNAT
+
+  #ROUTE TABLES
+  AmbariRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InternetVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Ambari-RouteTable"
+        - Key: Job
+          Value: Hadoop
+
+  HadoopRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-RouteTable"
+        - Key: Job
+          Value: Hadoop
+
+  HadoopPublicrouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Public-RouteTable"
+        - Key: Job
+          Value: Hadoop
+
+  #ROUTEING TABLE ASSOCIATIONS
+  AmbariRouteTableAssocui1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref InternetSubnet1
+      RouteTableId: !Ref AmbariRouteTable
+
+  ClusterRouteTableAssoccluster1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ClusterSubnet1
+      RouteTableId: !Ref HadoopRouteTable
+
+  ClusterPublicRouteTableAssoccluster1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ClusterPublicSubnet1
+      RouteTableId: !Ref HadoopPublicrouteTable
+
+  #ROUTES
+  AmbariRouteInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref AmbariRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref AmbariIGW
+
+  HadoopPublicRouteInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref HadoopPublicrouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref HadoopIGWNAT
+
+  AmbaritoHadoopRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref AmbariRouteTable
+      DestinationCidrBlock: !Ref HadoopVPC
+      VpcPeeringConnectionId: !Ref HadooptoAmbaripeering
+
+  ClustertoUIRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref HadoopRouteTable
+      DestinationCidrBlock: !Ref AmbariVPC
+      VpcPeeringConnectionId: !Ref HadooptoAmbaripeering
+
+  routeClusterInternet:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref HadoopRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayCluster
+
+  #PEERING CONNECTION
+  HadooptoAmbaripeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref ClusterVPC
+      VpcId: !Ref InternetVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-peering-Hadoop-to-Ambari"
+        - Key: Job
+          Value: Hadoop
+
+  HadoopEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  #NAT GATEWAY
+  NatGatewayCluster:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt HadoopEIP.AllocationId
+      SubnetId: !Ref ClusterPublicSubnet1
+
+  # EBS
+  Hadoop1NamenodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref NameNode
+      VolumeType: gp2
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop1-namenode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop1DatanodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref DataNode
+      VolumeType: st1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop1-datanode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop2NamenodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref NameNode
+      VolumeType: gp2
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop2-namenode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop2DatanodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref DataNode
+      VolumeType: st1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop2-datanode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop3NamenodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref NameNode
+      VolumeType: gp2
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop3-namenode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop3DatanodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref DataNode
+      VolumeType: st1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop3-datanode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop4NamenodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref NameNode
+      VolumeType: gp2
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop4-namenode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop4DatanodeDisk1:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref DataNode
+      VolumeType: st1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-hadoop4-datanode-disk1"
+        - Key: Job
+          Value: Hadoop
+
+  # EC2
+  AmbariNode:
+    Type: AWS::EC2::Instance
+    Properties:
+      DisableApiTermination: false
+      ImageId: !Ref AmbariServerAMI
+      InstanceType: !Ref AmbariEC2Instance
+      KeyName: !Ref AmbariKeyName
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 100
+      SecurityGroupIds:
+        - !Ref secGroupAmbari
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          hostnamectl set-hostname ambari.${DomainName}
+          systemctl enable ambari-server
+          systemctl start ambari-server
+          if systemctl is-active --quiet ambari-server; then
+            exit 0
+          else
+            exit 1
+          fi
+      SubnetId: !Ref InternetSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Ambari-Server"
+        - Key: Job
+          Value: Hadoop
+
+  placementGroup:
+    Type: AWS::EC2::PlacementGroup
+    Properties:
+      Strategy: partition
+
+  Hadoop1Node:
+    Type: AWS::EC2::Instance
+    UpdateReplacePolicy: Delete
+    Properties:
+      DisableApiTermination: false
+      ImageId: !Ref AmbariAgentAMI
+      InstanceType: !Ref HadoopEC2Instance
+      PlacementGroupName: !Ref placementGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref HadoopNode
+      Volumes:
+        - Device: /dev/sdd
+          VolumeId: !Ref Hadoop1DatanodeDisk1
+        - Device: /dev/sde
+          VolumeId: !Ref Hadoop1NamenodeDisk1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      EbsOptimized: true
+      KeyName: !Ref HadoopKeyName
+      SecurityGroupIds:
+        - !Ref secGroupHadoop
+      SubnetId: !Ref ClusterSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          hostnamectl set-hostname hadoop1.${DomainName}
+
+          sed -i 's/hostname=localhost/hostname=ambari.${DomainName}/' /etc/ambari-agent/conf/ambari-agent.ini
+          apt-get update
+          apt-get install -y libsasl2-dev
+          mkdir -p ${NamenodePath} ${DatanodePath}
+          systemctl enable ambari-agent
+          systemctl start ambari-agent
+          if systemctl is-active --quiet ambari-agent; then
+            exit 0
+          else
+            exit 1
+          fi
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Node1"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop2Node:
+    Type: AWS::EC2::Instance
+    UpdateReplacePolicy: Delete
+    Properties:
+      DisableApiTermination: false
+      ImageId: !Ref AmbariAgentAMI
+      InstanceType: !Ref HadoopEC2Instance
+      PlacementGroupName: !Ref placementGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref HadoopNode
+      Volumes:
+        - Device: /dev/sdd
+          VolumeId: !Ref Hadoop2DatanodeDisk1
+        - Device: /dev/sde
+          VolumeId: !Ref Hadoop2NamenodeDisk1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      EbsOptimized: true
+      KeyName: !Ref HadoopKeyName
+      SecurityGroupIds:
+        - !Ref secGroupHadoop
+      SubnetId: !Ref ClusterSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          hostnamectl set-hostname hadoop2.${DomainName}
+
+          sed -i 's/hostname=localhost/hostname=ambari.${DomainName}/' /etc/ambari-agent/conf/ambari-agent.ini
+          apt-get update
+          apt-get install -y libsasl2-dev
+          mkdir -p ${NamenodePath} ${DatanodePath}
+          systemctl enable ambari-agent
+          systemctl start ambari-agent
+          if systemctl is-active --quiet ambari-agent; then
+            exit 0
+          else
+            exit 1
+          fi
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Node2"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop3Node:
+    Type: AWS::EC2::Instance
+    UpdateReplacePolicy: Delete
+    Properties:
+      DisableApiTermination: false
+      ImageId: !Ref AmbariAgentAMI
+      InstanceType: !Ref HadoopEC2Instance
+      PlacementGroupName: !Ref placementGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref HadoopNode
+      Volumes:
+        - Device: /dev/sdd
+          VolumeId: !Ref Hadoop3DatanodeDisk1
+        - Device: /dev/sde
+          VolumeId: !Ref Hadoop3NamenodeDisk1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      EbsOptimized: true
+      KeyName: !Ref HadoopKeyName
+      SecurityGroupIds:
+        - !Ref secGroupHadoop
+      SubnetId: !Ref ClusterSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          hostnamectl set-hostname hadoop3.${DomainName}
+
+          sed -i 's/hostname=localhost/hostname=ambari.${DomainName}/' /etc/ambari-agent/conf/ambari-agent.ini
+          apt-get update
+          apt-get install -y libsasl2-dev
+          mkdir -p ${NamenodePath} ${DatanodePath}
+          systemctl enable ambari-agent
+          systemctl start ambari-agent
+          if systemctl is-active --quiet ambari-agent; then
+            exit 0
+          else
+            exit 1
+          fi
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Node3"
+        - Key: Job
+          Value: Hadoop
+
+  Hadoop4Node:
+    Type: AWS::EC2::Instance
+    UpdateReplacePolicy: Delete
+    Properties:
+      DisableApiTermination: false
+      ImageId: !Ref AmbariAgentAMI
+      InstanceType: !Ref HadoopEC2Instance
+      PlacementGroupName: !Ref placementGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref HadoopNode
+      Volumes:
+        - Device: /dev/sdd
+          VolumeId: !Ref Hadoop4DatanodeDisk1
+        - Device: /dev/sde
+          VolumeId: !Ref Hadoop4NamenodeDisk1
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      EbsOptimized: true
+      KeyName: !Ref HadoopKeyName
+      SecurityGroupIds:
+        - !Ref secGroupHadoop
+      SubnetId: !Ref ClusterSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          hostnamectl set-hostname hadoop4.${DomainName}
+
+          sed -i 's/hostname=localhost/hostname=ambari.${DomainName}/' /etc/ambari-agent/conf/ambari-agent.ini
+          apt-get update
+          apt-get install -y libsasl2-dev
+          mkdir -p ${NamenodePath} ${DatanodePath}
+          systemctl enable ambari-agent
+          systemctl start ambari-agent
+          if systemctl is-active --quiet ambari-agent; then
+            exit 0
+          else
+            exit 1
+          fi
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Node4"
+        - Key: Job
+          Value: Hadoop
+
+  # SECURITY GROUPS
+  secGroupAmbari:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName} Ambari"
+      GroupDescription: ssh group for Ambari
+      VpcId: !Ref InternetVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 24.224.226.136/32
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 10.253.0.0/16
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref HadoopVPC
+        - IpProtocol: tcp
+          FromPort: 8440
+          ToPort: 8441
+          CidrIp: !Ref HadoopVPC
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 24.224.226.136/32
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.253.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-SSH-Ambari"
+        - Key: Job
+          Value: Hadoop
+
+  secGroupHadoop:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName} Hadoop"
+      GroupDescription: sec group for machines within clsuter VPC
+      VpcId: !Ref ClusterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: !Ref HadoopVPC
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: !Ref AmbariVPC
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AmbariVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Hadoop-Cluster"
+        - Key: Job
+          Value: Hadoop
+
+  # DNS
+
+  AmbariHostName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "ambari.${DomainName}"
+      Type: A
+      TTL: "60"
+      HostedZoneId: !Ref HostedZoneId
+      ResourceRecords:
+        - !GetAtt AmbariNode.PrivateIp
+
+  Hadoop1HostName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "hadoop1.${DomainName}"
+      Type: A
+      TTL: "60"
+      HostedZoneId: !Ref HostedZoneId
+      ResourceRecords:
+        - !GetAtt Hadoop1Node.PrivateIp
+
+  Hadoop2HostName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "hadoop2.${DomainName}"
+      Type: A
+      TTL: "60"
+      HostedZoneId: !Ref HostedZoneId
+      ResourceRecords:
+        - !GetAtt Hadoop2Node.PrivateIp
+
+  Hadoop3HostName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "hadoop3.${DomainName}"
+      Type: A
+      TTL: "60"
+      HostedZoneId: !Ref HostedZoneId
+      ResourceRecords:
+        - !GetAtt Hadoop3Node.PrivateIp
+
+  Hadoop4HostName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Sub "hadoop4.${DomainName}"
+      Type: A
+      TTL: "60"
+      HostedZoneId: !Ref HostedZoneId
+      ResourceRecords:
+        - !GetAtt Hadoop4Node.PrivateIp
+
+Outputs:
+  URLAmbari:
+    Description: Ambari Server PRIVATE URL
+    Value: !Sub "http://${AmbariHostName}:8080/"
+  URLHadoop1:
+    Description: Hadoop node1 URL
+    Value: !Ref Hadoop1HostName
+  URLHadoop2:
+    Description: Hadoop node2 URL
+    Value: !Ref Hadoop2HostName
+  URLHadoop3:
+    Description: Hadoop node3 URL
+    Value: !Ref Hadoop3HostName
+  URLHadoop4:
+    Description: Hadoop node4 URL
+    Value: !Ref Hadoop4HostName
