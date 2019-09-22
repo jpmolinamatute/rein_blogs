@@ -21,7 +21,7 @@ We are going to deploy a machine with Ambari Server exposed to the internet and 
   4.1. Make sure you are in the region that you want to deploy the cluster
   4.2. Choose a different name than hadoop, since we are using this name as tag for several resources to identifying them as part of this template, please choose something more meaningful to what your ultimate goal is.
   4.3. Select an EC2 instance type for the hadoop server machine and one for the hadoop cluster machines [more info](https://aws.amazon.com/ec2/instance-types/ "Amazon EC2 Instance Types")
-
+  4.4. Check for log in the EC2 console
 5. Mount external drives
 
     ```sh
@@ -56,3 +56,4 @@ We are going to deploy a machine with Ambari Server exposed to the internet and 
   7.2. Make ambari server to be accessible only through a VPN or VPC
   7.3. Remove access to internet from Hadoop cluster and work with private repositories for software updates
   7.4. Add more Hadoop Workers
+  7.5. Implement AWS::AutoScaling::LaunchConfiguration and AWS::AutoScaling::AutoScalingGroup instead of single EC2 instances
